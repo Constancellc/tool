@@ -25,10 +25,11 @@ spotLoads = {634:[160,110,120,90,120,90],
              645:[0,0,170,125,0,0],
              646:[0,0,230,132,0,0],
              652:[128,86,0,0,0,0],
-             671:[385,220,385,220,385,220],
-             675:[485,190,68,60,290,212],
+             671:[385+9,220+5,385+33,220+19,385+59,220+34],
+             675:[485,190-200,68,60-200,290,212-200],
              692:[0,0,0,0,170,151],
-             611:[0,0,0,0,170,80]}
+             611:[0,0,0,0,170,80-100],
+             632:[9,5,33,19,59,34]}
 
 # Node A, Node B, Phase 1 (kW), Phase 1 (kVar), Phase 2 (kW), Phase 2 (kVar),
 # Phase 3 (kW), Phase 3 (kVar)
@@ -62,10 +63,31 @@ Z = {'601':[[complex(0.3465,1.0179),complex(0.1560,0.5017),
      '607':[[complex(1.3425,0.5124),complex(0.0000,0.0000),
              complex(0.0000,0.0000)],
             [complex(0.0000,0.0000),complex(0.0000,0.0000)],
+            [complex(0.0000,0.0000)]],
+     'Switch':[[complex(0.000,0.000),complex(0.0000,0.0000),
+             complex(0.0000,0.0000)],
+            [complex(0.0000,0.0000),complex(0.0000,0.0000)],
             [complex(0.0000,0.0000)]]}
           
 N = len(nodes) # number of nodes
 L = len(lines) # number of lines
+
+R = []
+X = []
+
+for i in range(0,L):
+    length = lines[i][2] # ft
+    length = length*0.00018939 # ft -> miles
+    config = lines[i][3]
+
+    for ph in range(0,3):
+        try:
+            R.append(length*Z[config][ph][0].real)
+            X.append(length*Z[config][ph][0].imag)
+        except:
+            R.append(0.0)
+            X.append(0.0)
+        
 
 # Acutally first I want to construct a Y matrix
 '''
@@ -87,18 +109,21 @@ for i in range(0,L):
 # first considering all of the Pij terms
 
 # I need to determine my decision variables - ie. which Pij exist
-# dumb version - assume 3L Pijs and 3L Qijs, in order of definition
-
+# dumb version - assume 3L Pijs and 3L Qijs and 3N Vis
+# order = Pij1 Pij2 Pij3 Qij1 Qij2 Qij3 Pjk1 Pjk2 .... Vi1 Vi2 Vi3 Vj1 ... VN3
 #X = [0.0]*(6*L)
 
 # starting the matrix of constraints
-A = matrix(0.0,(6*L,6*L))
-b = matrix(0.0,(6*L,1))
+A = matrix(0.0,(9*L,6*L+3*N))
+b = matrix(0.0,(9*L,1))
 
 for l in range(0,L):
     line = lines[l]
     nodei = line[0]
     nodej = line[1]
+
+    Vi_index = nodes[nodei]
+    Vj_index = nodes[nodej]
 
     try:
         loads = spotLoads[nodej]
@@ -109,6 +134,11 @@ for l in range(0,L):
         A[6*l+ph,6*l+ph] = 1.0 # p
         A[6*l+ph+3,6*l+ph+3] = 1.0 # q
 
+        A[6*L+3*l+ph,6*L+3*Vi_index+ph] = 1.0 # Vi
+        A[6*L+3*l+ph,6*L+3*Vj_index+ph] = -1.0 # Vj
+        A[6*L+3*l+ph,6*l+ph] = -R[l] # Pij
+        A[6*L+3*l+ph,6*l+ph+3] = -X[l] # Qij
+        
         # look for other things connected to j
         for l2 in range(0,L):
             if lines[l2][0] != nodej:
