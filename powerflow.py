@@ -7,6 +7,7 @@ N = len(nodes) # number of nodes
 L = len(lines) # number of lines
 
 lineVariables = []
+n = 0
 for i in range(0,len(lines)):
     line = lines[i]
     if i == 0:
@@ -14,8 +15,11 @@ for i in range(0,len(lines)):
     for ph in range(0,nPhases):
         if line[4][ph] == 0:
             continue
-        lineVariables.append([i,ph,'p'])
-        lineVariables.append([i,ph,'q'])
+        lineVariables.append([i,ph,'p',n])
+        n += 1
+        lineVariables.append([i,ph,'q',n])
+        n += 1
+
 
 nodeVariables = []
 slackVariables = []
@@ -28,8 +32,8 @@ for node in nodes:
         if node == slackbus[0]:
             slackVariables.append(i)
         i += 1
-print nodeVariables
-print slackVariables
+
+
 R = []
 X = []
 
@@ -63,6 +67,7 @@ A = matrix(0.0,(M,M))
 b = matrix(0.0,(M,1))
 
 for variable in lineVariables:
+    pq_index = variable[3]
     line = lines[variable[0]]
     ph = variable[1]
     kind = variable[2]
@@ -70,11 +75,11 @@ for variable in lineVariables:
     nodei = line[0]
     nodej = line[1]
 
-    A[variable[0],variable[0]] = 1.0 # line flow in question
+    A[pq_index,pq_index] = 1.0 # line flow in question
 
     # now look for things connected to j
     for variable2 in lineVariables:
-        if lines[variable2[0]][1] != nodej:
+        if lines[variable2[0]][0] != nodej:
             continue
 
         if variable[1] != variable2[1]:
@@ -83,8 +88,11 @@ for variable in lineVariables:
         if variable[2] != variable2[2]:
             continue
 
+        if variable[0] == variable2[0]:
+            continue
+
         # so variable 2 leaves from j and is the same phase and type as variable
-        A[variable2[0],variable2[0]] = -1.0
+        A[pq_index,variable2[3]] = -1.0
 
     # lastly look for real loads at j
 
@@ -98,7 +106,7 @@ for variable in lineVariables:
     except:
         load = 0.0
 
-    b[variable[0]] = load
+    b[pq_index] = load
 
     r = R[variable[0]][ph]
     x = R[variable[0]][ph]
@@ -112,26 +120,106 @@ for variable in lineVariables:
         elif node[1] == nodej:
             Vj_index = node[0]
 
-    print Vj_index
-
     if kind == 'p':           
         A[len(lineVariables)+Vj_index,len(lineVariables)+Vi_index] = 1.0 # Vi   
         A[len(lineVariables)+Vj_index,len(lineVariables)+Vj_index] = 1.0 # Vj
         
-        A[len(lineVariables)+Vj_index,variable[0]] = r # Pij  
+        A[len(lineVariables)+Vj_index,pq_index] = r # Pij  
 
     else:
-        A[len(lineVariables)+Vj_index,variable[0]] = x # Qij
+        A[len(lineVariables)+Vj_index,pq_index] = x # Qij
      
 # and the slack bus
 for V_index in slackVariables:
     A[len(lineVariables)+V_index,len(lineVariables)+V_index] = 1.0
-    b[V_index] = float(slackbus[1])
-    print V_index
+    b[len(lineVariables)+V_index] = float(slackbus[1])
+    
 
    
 sol = np.linalg.solve(A,b)
-print sol
+#print sol
+
+print 'PRINTING LINE POWERS'
+print ''
+print 'Node A   Node B          Real Power               Reactive Power'
+print '------   ------    ----------------------     ----------------------'
+print '                   Ph 1  |  Ph 2  |  Ph 3     Ph 1  |  Ph 2  |  Ph 3'
+for l in range(0,len(lines)):
+    line = lines[l]
+    print ' ',
+    print line[0],
+    print '   ',
+    print line[1],
+    print '    ',
+    for ph in range(0,3):
+        realPower = None
+        for variable in lineVariables:
+            if variable[0] != l:
+                continue
+            if variable[1] != ph:
+                continue
+            if variable[2] != 'p':
+                continue
+            realPower = float(int(sol[variable[3]][0]/100))/100
+        if realPower == None:
+            print ' -- ',
+        else:
+            print realPower,
+        if realPower > 100:
+            print ' ',
+        else:
+            print '  ',
+
+    for ph in range(0,3):
+        reactivePower = None
+        for variable in lineVariables:
+            if variable[0] != l:
+                continue
+            if variable[1] != ph:
+                continue
+            if variable[2] != 'p':
+                continue
+            reactivePower = float(int(sol[variable[3]][0]/100))/100
+        if reactivePower == None:
+            print ' --- ',
+        else:
+            print reactivePower,
+        if ph == 2:
+            print ''
+        else:
+            if reactivePower > 100:
+                print ' ',
+            else:
+                print '  ',
+print ''
+print ''
+
+print 'PRINTING VOLTAGES'
+print ''
+print '  Node            Phase 1            Phase 2            Phase 3'
+print '  ----            -------            -------            -------'
+for node in nodes:
+    print '  ',
+    print node,
+    print '           ',
+    for ph in range(0,3):
+        voltage = None
+        for variable in nodeVariables:
+            if variable[1] != node:
+                continue
+            if variable[2] != ph:
+                continue
+            voltage = float(int(sol[len(lineVariables)+variable[0]][0]/100))/100
+        if voltage == None:
+            print ' -- ',
+        else:
+            print voltage,
+        if voltage > 100:
+            print '         ',
+        else:
+            print '          ',
+    print ''
+
 '''
 linesPower = []
 nodeVoltages = []
